@@ -1,0 +1,289 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "blog_pro305"
+
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+  BlogApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      CacheClusterEnabled: false
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,PUT,OPTIONS'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: Authorizer
+        Authorizers:
+          Authorizer:
+            FunctionArn: !GetAtt Authorizer.Arn
+            Identity:
+              Headers:
+                - Authorization
+
+  Authorizer:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Policies:
+        - CloudWatchLogsFullAccess
+        - AmazonDynamoDBFullAccess
+        - DynamoDBCrudPolicy:
+            TableName: BlogUser
+      Architectures:
+        - x86_64
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./lambdas/authorization
+      DockerTag: python3.12-v1
+
+  User:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Policies:
+        - CloudWatchLogsFullAccess
+        - AmazonDynamoDBFullAccess
+        - DynamoDBCrudPolicy:
+            TableName: BlogUser
+      Architectures:
+        - x86_64
+      Events:
+        GetAllUsers:
+          Type: Api
+          Properties:
+            Path: /user
+            Method: get
+            RestApiId: !Ref BlogApi
+        GetUserById:
+          Type: Api
+          Properties:
+            Path: /user/id/{id}
+            Method: get
+            RestApiId: !Ref BlogApi
+        GetUserByUsername:
+          Type: Api
+          Properties:
+            Path: /user/username/{username}
+            Method: get
+            RestApiId: !Ref BlogApi
+        CreateUser:
+          Type: Api
+          Properties:
+            Path: /user
+            Method: POST
+            RestApiId: !Ref BlogApi
+            Auth:
+              Authorizer: NONE
+        UpdateUser:
+          Type: Api
+          Properties:
+            Path: /user
+            Method: put
+            RestApiId: !Ref BlogApi
+        DeleteUser:
+          Type: Api
+          Properties:
+            Path: /user
+            Method: delete
+            RestApiId: !Ref BlogApi
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./lambdas/user
+      DockerTag: python3.12-v1
+
+  Blog:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - CloudWatchLogsFullAccess
+        - DynamoDBCrudPolicy:
+            TableName: BlogBlog
+        - DynamoDBCrudPolicy:
+            TableName: BlogPost
+        - DynamoDBCrudPolicy:
+            TableName: BlogUser
+      Architectures:
+        - x86_64
+      Events:
+        GetAllBlogs:
+          Type: Api
+          Properties:
+            Path: /blog
+            Method: get
+            RestApiId: !Ref BlogApi
+        GetBlogById:
+          Type: Api
+          Properties:
+            Path: /blog/id/{id}
+            Method: get
+            RestApiId: !Ref BlogApi
+        GetBlogByTitle:
+          Type: Api
+          Properties:
+            Path: /blog/title/{title}
+            Method: get
+            RestApiId: !Ref BlogApi
+        GetBlogByCategory:
+          Type: Api
+          Properties:
+            Path: /blog/category/{category}
+            Method: get
+            RestApiId: !Ref BlogApi
+        GetBlogByAuthor:
+          Type: Api
+          Properties:
+            Path: /blog/author/{author}
+            Method: get
+            RestApiId: !Ref BlogApi
+        CreateBlog:
+          Type: Api
+          Properties:
+            Path: /blog
+            Method: post
+            RestApiId: !Ref BlogApi
+        UpdateBlog:
+          Type: Api
+          Properties:
+            Path: /blog
+            Method: put
+            RestApiId: !Ref BlogApi
+        DeleteBlog:
+          Type: Api
+          Properties:
+            Path: /blog/id/{id}
+            Method: delete
+            RestApiId: !Ref BlogApi
+        GetBlogPosts:
+          Type: Api
+          Properties:
+            Path: /blog/posts/{blog_id}
+            Method: get
+            RestApiId: !Ref BlogApi
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./lambdas/blog
+      DockerTag: python3.12-v1
+
+  Post:
+    Type: AWS::Serverless::Function
+    Properties:
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref Queue
+      PackageType: Image
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - CloudWatchLogsFullAccess
+        - DynamoDBCrudPolicy:
+            TableName: BlogBlog
+        - DynamoDBCrudPolicy:
+            TableName: BlogPost
+        - DynamoDBCrudPolicy:
+            TableName: BlogUser
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+              Resource: !GetAtt Queue.Arn
+      Architectures:
+        - x86_64
+      Events:
+        GetPostById:
+          Type: Api
+          Properties:
+            Path: /post/id/{id}
+            Method: get
+            RestApiId: !Ref BlogApi
+        CreatePost:
+          Type: Api
+          Properties:
+            Path: /post
+            Method: post
+            RestApiId: !Ref BlogApi
+        UpdatePost:
+          Type: Api
+          Properties:
+            Path: /post
+            Method: put
+            RestApiId: !Ref BlogApi
+        DeletePost:
+          Type: Api
+          Properties:
+            Path: /post/id/{id}
+            Method: delete
+            RestApiId: !Ref BlogApi
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./lambdas/post
+      DockerTag: python3.12-v1
+
+
+  UserTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+          Name: Id
+          Type: String
+      TableName: BlogUser
+
+  BlogTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+          Name: Id
+          Type: String
+      TableName: BlogBlog
+
+  PostTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+          Name: Id
+          Type: String
+      TableName: BlogPost
+
+  Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: BlogQueue
+
+  SQSProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref S3Bucket
+      PackageType: Image
+      Policies:
+        - AWSLambdaSQSQueueExecutionRole
+        - AmazonS3FullAccess
+      Architectures:
+        - x86_64
+      Events:
+        QueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Queue.Arn
+            BatchSize: 10
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./lambdas/sqs_processor
+      DockerTag: python3.12-v1
+
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::AccountId}-${AWS::Region}-blog-s3-bucket'
+
+
+
+
+
